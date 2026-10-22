@@ -1,0 +1,15 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- YOLOv4 (onnx/models). Package references and publish settings are in ../Directory.Build.props. -->
+  <ItemGroup>
+    <!-- Image decoding and resizing (MIT). The NoDependencies Linux native needs no fontconfig in the images. -->
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Linux.NoDependencies" Version="4.153.1" Condition="$(RuntimeIdentifier.StartsWith('linux'))" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Compile Include="..\Coco.cs;..\Yolov4Decoder.cs" />
+    <None Include="..\..\deps\model\yolov4.onnx;..\..\deps\model\dog.jpg" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

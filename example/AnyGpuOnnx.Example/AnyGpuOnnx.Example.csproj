@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Package references and publish settings are in ../Directory.Build.props, shared by the three examples. -->
+  <ItemGroup>
+    <None Include="..\..\deps\model\squeezenet1.1-7.onnx" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

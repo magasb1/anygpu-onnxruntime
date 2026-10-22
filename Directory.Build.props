@@ -1,0 +1,31 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Microsoft packages (managed binding, DirectML, Gpu.Windows, Gpu.Linux). -->
+    <OnnxRuntimeVersion>1.24.4</OnnxRuntimeVersion>
+    <!-- NVIDIA Jetson AI Lab build packed as AnyGpu.OnnxRuntime.Native.linux-arm64; the managed binding only asks the
+         native library for its C API by number, so 1.24.4 managed drives it. -->
+    <JetsonOnnxRuntimeVersion>1.24.0</JetsonOnnxRuntimeVersion>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <PropertyGroup Label="NuGet package metadata">
+    <Version>$(OnnxRuntimeVersion)</Version>
+    <Authors>Magnus Bye Asbjørnsen</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageTags>onnxruntime;onnx;cuda;tensorrt;directml;jetson;gpu;inference</PackageTags>
+    <RepositoryType>git</RepositoryType>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true' or '$(TF_BUILD)' == 'true'">true</ContinuousIntegrationBuild>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <None Include="$(MSBuildProjectDirectory)\README.md" Pack="true" PackagePath="/" Visible="false" Condition="Exists('$(MSBuildProjectDirectory)\README.md')" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The linux-arm64 files that Microsoft.ML.OnnxRuntime.Gpu.Linux does not ship: runtimes/linux-arm64/native/* from NVIDIA's
+    Jetson AI Lab ONNX Runtime build (JetPack 6: CUDA 12.6, cuDNN 9, TensorRT 10.3). Same layout and dependency as Microsoft's
+    RID packages, so it drops in next to them. Versioned as the ONNX Runtime it contains. Input: ../../deps/linux-arm64 (get-deps.ps1).
+  -->
+  <PropertyGroup>
+    <PackageId>AnyGpu.OnnxRuntime.Native.linux-arm64</PackageId>
+    <Version>$(JetsonOnnxRuntimeVersion)</Version>
+    <Description>ONNX Runtime $(JetsonOnnxRuntimeVersion) for linux-arm64 with CUDA and TensorRT execution providers (NVIDIA Jetson, JetPack 6). Fills the linux-arm64 gap in Microsoft.ML.OnnxRuntime.Gpu.Linux. The CPU provider runs on any linux-arm64.</Description>
+    <IncludeBuildOutput>false</IncludeBuildOutput>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <NoWarn>$(NoWarn);NU5128</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="$(OnnxRuntimeVersion)" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <NativeFile Include="..\..\deps\linux-arm64\*.so" />
+    <None Include="@(NativeFile)" Pack="true" PackagePath="runtimes/linux-arm64/native" />
+  </ItemGroup>
+
+  <Target Name="CheckNativeInputs" BeforeTargets="GenerateNuspec">
+    <Error Condition="'@(NativeFile)' == ''" Text="deps\linux-arm64 is empty: run get-deps.ps1 first" />
+  </Target>
+
+</Project>

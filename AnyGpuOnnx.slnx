@@ -1,0 +1,12 @@
+<Solution>
+  <Folder Name="/example/">
+    <Project Path="example/AnyGpuOnnx.Example/AnyGpuOnnx.Example.csproj" />
+    <Project Path="example/LiveDetection.Example/LiveDetection.Example.csproj" />
+    <Project Path="example/RfDetr.Example/RfDetr.Example.csproj" />
+    <Project Path="example/Yolov4.Example/Yolov4.Example.csproj" />
+  </Folder>
+  <Folder Name="/src/">
+    <Project Path="src/AnyGpu.OnnxRuntime.Native/AnyGpu.OnnxRuntime.Native.csproj" />
+    <Project Path="src/AnyGpu.OnnxRuntime/AnyGpu.OnnxRuntime.csproj" />
+  </Folder>
+</Solution>

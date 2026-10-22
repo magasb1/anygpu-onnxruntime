@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Managed part: provider selection. RID-neutral, referenced unconditionally by every consumer. -->
+  <PropertyGroup>
+    <PackageId>AnyGpu.OnnxRuntime</PackageId>
+    <Description>InferenceSession factory that picks TensorRT, CUDA, DirectML or CPU at runtime and falls back in that order. Pair with one AnyGpu.OnnxRuntime.Native.[rid] package per runtime identifier.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Managed" Version="$(OnnxRuntimeVersion)" />
+  </ItemGroup>
+
+</Project>

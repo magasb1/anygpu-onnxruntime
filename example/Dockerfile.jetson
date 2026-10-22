@@ -1,0 +1,23 @@
+# linux/arm64 image for NVIDIA Jetson, JetPack 6.x (L4T r36.4, CUDA 12.6, TensorRT 10.3). Context: artifacts/publish/linux-arm64.
+# JetPack 6's container runtime only mounts the driver and devices, so CUDA, cuDNN and TensorRT must be in the image:
+#   - l4t-cuda runtime image: CUDA runtime libraries
+#   - libnvinfer10 + libnvinfer-plugin10 + libnvonnxparsers10: TensorRT runtime and the ONNX parser the ORT TensorRT EP dlopens
+#   - libcudnn9-cuda-12: the Jetson AI Lab ORT build links cuDNN from both the TensorRT and the CUDA provider (~1 GB)
+# Build it on the Jetson itself (native apt is much faster than emulation).
+# Run with: docker run --rm --runtime nvidia -v trt_cache:/trt_cache anygpu-onnx:jetson
+FROM nvcr.io/nvidia/l4t-cuda:12.6.11-runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates curl \
+ && curl -fsSL https://repo.download.nvidia.com/jetson/jetson-ota-public.asc -o /etc/apt/trusted.gpg.d/jetson-ota-public.asc \
+ && echo "deb https://repo.download.nvidia.com/jetson/common r36.4 main" > /etc/apt/sources.list.d/nvidia-l4t.list \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends libnvinfer10 libnvinfer-plugin10 libnvonnxparsers10 libcudnn9-cuda-12 \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:/usr/local/cuda/targets/aarch64-linux/lib
+WORKDIR /app
+COPY --chmod=755 . .
+RUN mkdir -p /trt_cache
+VOLUME /trt_cache
+ENTRYPOINT ["/app/AnyGpuOnnx.Example", "--trt-cache", "/trt_cache"]

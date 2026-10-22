@@ -1,0 +1,7 @@
+# linux/amd64 image with the CUDA 12 runtime + cuDNN 9 that the CUDA provider in Microsoft.ML.OnnxRuntime.Gpu.Linux needs.
+# TensorRT is not installed here, so the factory uses CUDA; start from an nvcr.io/nvidia/tensorrt image to get TensorRT on x64.
+# Context: artifacts/publish/linux-x64. Run with: docker run --rm --gpus all anygpu-onnx:cuda   (without --gpus it falls back to CPU)
+FROM nvidia/cuda:12.6.3-cudnn-runtime-ubuntu22.04
+WORKDIR /app
+COPY --chmod=755 . .
+ENTRYPOINT ["/app/AnyGpuOnnx.Example"]

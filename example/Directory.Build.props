@@ -1,0 +1,35 @@
+<Project>
+  <Import Project="$([MSBuild]::GetPathOfFileAbove('Directory.Build.props', '$(MSBuildThisFileDirectory)../'))" />
+
+  <!-- This is what a consumer adds: the managed factory plus one native package per runtime identifier. -->
+  <ItemGroup>
+    <PackageReference Include="AnyGpu.OnnxRuntime" Version="$(OnnxRuntimeVersion)" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.DirectML"    Version="$(OnnxRuntimeVersion)"       Condition="'$(RuntimeIdentifier)' == 'win-x64'" />
+    <!-- win-x64 NVIDIA: only the TensorRT and CUDA provider libraries of Gpu.Windows, not its onnxruntime.dll (which would clash
+         with DirectML's). The DirectML build loads them through its provider bridge; they need CUDA 12 + cuDNN 9 (and TensorRT 10)
+         installed, and without an NVIDIA driver the factory skips them. -->
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Windows" Version="$(OnnxRuntimeVersion)"       Condition="'$(RuntimeIdentifier)' == 'win-x64'" ExcludeAssets="all" GeneratePathProperty="true" />
+    <PackageReference Include="Microsoft.ML.OnnxRuntime.Gpu.Linux"   Version="$(OnnxRuntimeVersion)"       Condition="'$(RuntimeIdentifier)' == 'linux-x64'" />
+    <PackageReference Include="AnyGpu.OnnxRuntime.Native.linux-arm64" Version="$(JetsonOnnxRuntimeVersion)" Condition="'$(RuntimeIdentifier)' == 'linux-arm64'" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(RuntimeIdentifier)' == 'win-x64'">
+    <None Include="$(PkgMicrosoft_ML_OnnxRuntime_Gpu_Windows)\runtimes\win-x64\native\onnxruntime_providers_cuda.dll;$(PkgMicrosoft_ML_OnnxRuntime_Gpu_Windows)\runtimes\win-x64\native\onnxruntime_providers_tensorrt.dll"
+          Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" Visible="false" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <!-- Microsoft.AI.DirectML would otherwise copy DirectML.Debug.dll next to the executable. -->
+    <Microsoft_AI_DirectML_SkipDebugLayerCopy>true</Microsoft_AI_DirectML_SkipDebugLayerCopy>
+
+    <OutputType>Exe</OutputType>
+    <IsPackable>false</IsPackable>
+    <RuntimeIdentifiers>win-x64;linux-x64;linux-arm64</RuntimeIdentifiers>
+    <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <!-- Single-file works: native libraries still land as loose files beside it. -->
+    <PublishSingleFile>true</PublishSingleFile>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Local feed written by ../build.ps1. Replace with your NuGet feed. -->
+    <RestoreAdditionalProjectSources>$(MSBuildThisFileDirectory)../artifacts/packages</RestoreAdditionalProjectSources>
+  </PropertyGroup>
+</Project>

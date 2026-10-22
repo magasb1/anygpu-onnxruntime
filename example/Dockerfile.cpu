@@ -1,0 +1,11 @@
+# CPU-only image, built for linux/amd64 (context: artifacts/publish/linux-x64) or linux/arm64 (context: artifacts/publish/linux-arm64).
+# The GPU provider libraries are dropped in a throwaway stage (a RUN rm in the final image would not shrink the COPY layer),
+# so the factory falls back to CPU and says why.
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0 AS trim
+COPY . /app
+RUN rm -f /app/libonnxruntime_providers_cuda.so /app/libonnxruntime_providers_tensorrt.so
+
+FROM mcr.microsoft.com/dotnet/runtime-deps:8.0
+WORKDIR /app
+COPY --from=trim --chmod=755 /app .
+ENTRYPOINT ["/app/AnyGpuOnnx.Example"]

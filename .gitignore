@@ -1,0 +1,8 @@
+bin/
+obj/
+artifacts/
+deps/
+trt_cache/
+*.user
+.vs/
+.idea/
