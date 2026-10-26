@@ -7,6 +7,13 @@ deps/model/yolov4.onnx                     YOLOv4 COCO detector (onnx/models, 25
 deps/model/rf-detr-nano.onnx               RF-DETR nano COCO detector (PierreMarieCurie/rf-detr-onnx on Hugging Face, 108 MB)
 deps/model/rf-detr-nano-dynamic.onnx       the same network with dynamic batch, height and width, for batching (onnx-community/rfdetr_nano-ONNX, Apache-2.0, 108 MB)
 deps/model/dog.jpg                         test image (AlexeyAB/darknet)
+deps/model/yolo11{n,s}.onnx                Ultralytics YOLO11 nano/small COCO detectors, 640, NMS needed (11 / 38 MB)
+deps/model/yolo26{n,s}.onnx                Ultralytics YOLO26 nano/small COCO detectors, 640, end2end: no NMS (10 / 38 MB)
+                                           Both: official Ultralytics weights exported by EdgeFirst (huggingface.co/EdgeFirst),
+                                           AGPL-3.0. Downloaded for benchmarking only: no example bundles them or ships them in an image.
+deps/model/visdrone-yolo26n{,-1344x768}.onnx  YOLO26 nano fine-tuned on VisDrone2019-DET (drone views, 10 classes), 640x640 and 16:9
+                                           1344x768 (10 / 10 MB). EdgeFirst's training on Ultralytics weights, AGPL-3.0; the VisDrone
+                                           dataset has its own terms (AISKYEYE, Tianjin University). Benchmarking only, like the above.
 deps/video/person-bicycle-car-detection.mp4  test video, 768x432 12 fps 54 s (intel-iot-devkit/sample-videos, Intel, CC BY 4.0, 6 MB)
 deps/linux-arm64/libonnxruntime*.so        ORT 1.24.0 core + CUDA + TensorRT providers for JetPack 6 (64 MB) - packed into AnyGpu.OnnxRuntime.Native.linux-arm64
 
@@ -32,6 +39,18 @@ $items = @(
        Sha256 = '9cbac6b11ce34a03034e4d5a24cfac5f18632fd6761d1311dd640232088d7fee'; Dir = 'model'; Name = 'rf-detr-nano-dynamic.onnx' }
     @{ Url = 'https://raw.githubusercontent.com/AlexeyAB/darknet/master/data/dog.jpg'
        Sha256 = '5a9522051c3cec2bbd2f6323fccba32e8fbf3ddcc2b3e2fd46b04c720bc6f866'; Dir = 'model' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/yolo11-det/resolve/main/onnx/yolo11n-det-fp32.onnx'
+       Sha256 = '40e2f56bf626fab2d4851148f7516c6e36f852c8a42d77fd2439c4505d8f04e7'; Dir = 'model'; Name = 'yolo11n.onnx' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/yolo11-det/resolve/main/onnx/yolo11s-det-fp32.onnx'
+       Sha256 = '0dd27fa741bce2dbc0d26d0dbfb5ae7dcb851d3dbcd91298eba1cef9464d4f1b'; Dir = 'model'; Name = 'yolo11s.onnx' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/yolo26-det/resolve/main/onnx/yolo26n-det-fp32-end2end.onnx'
+       Sha256 = '9f0b7145ae5a8e3ab4dedfbf2a2765d3b6c90e3f0d981fca8d71692fd3633ff1'; Dir = 'model'; Name = 'yolo26n.onnx' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/yolo26-det/resolve/main/onnx/yolo26s-det-fp32-end2end.onnx'
+       Sha256 = '94e2b400a857c51dcdbed61d04f49165aab79c6fc6202c4d7d41dd446cbd405e'; Dir = 'model'; Name = 'yolo26s.onnx' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/visdrone-yolo26-det/resolve/main/640/onnx/visdrone-yolo26n-det-fp32-640.onnx'
+       Sha256 = '8e96223a1384732608a4d32f09db752f1f352eb7f4ad7337c6f4c030b51f2750'; Dir = 'model'; Name = 'visdrone-yolo26n.onnx' }
+    @{ Url = 'https://huggingface.co/EdgeFirst/visdrone-yolo26-det/resolve/main/1344x768/onnx/visdrone-yolo26n-det-fp32-1344x768.onnx'
+       Sha256 = '39596be0ae4b338eda72f6338d131d58e3cd4b32ceb0c25e14967f7a2d21aedb'; Dir = 'model'; Name = 'visdrone-yolo26n-1344x768.onnx' }
     @{ Url = 'https://github.com/intel-iot-devkit/sample-videos/raw/master/person-bicycle-car-detection.mp4'
        Sha256 = '452b11b7e0efbd019f1d9570d0c790e90416ad4ad29eec6003872d08443140ef'; Dir = 'video' }
     @{ Url = 'https://apt.jetson-ai-lab.io/jp6/cu126/onnxruntime-gpu-1.24.0.tar.gz'

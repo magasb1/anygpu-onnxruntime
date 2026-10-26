@@ -92,6 +92,8 @@ example/LiveDetection.Example/      YOLOv4 or RF-DETR on live video feeds: ffmpe
 example/Coco.cs                     COCO class names shared by the detectors
 example/Yolov4Decoder.cs            YOLOv4 anchor decoding + NMS, shared by Yolov4.Example and the live example
 example/RfDetrDecoder.cs            RF-DETR decoding, shared by RfDetr.Example and the live example
+example/UltralyticsDecoder.cs       Ultralytics YOLO decoding (YOLO11 with NMS, YOLO26 end2end without), for the live example
+example/Nms.cs                      per-class NMS, shared by the YOLO decoders
 example/Dockerfile.{cpu,cuda,jetson}
 get-deps.ps1                        downloads the models, the test image and video and the Jetson tarball into deps/, SHA256-pinned
 build.ps1                           pack -> artifacts/packages, publish examples -> artifacts/publish/<rid>, docker build
@@ -104,7 +106,7 @@ for `dog.jpg` (or `--image FILE`); the boxes must agree across providers.
 ## Build and run
 
 ```powershell
-.\get-deps.ps1                         # models (480 MB), test video and the Jetson tarball (64 MB), checksums verified
+.\get-deps.ps1                         # models (580 MB), test video and the Jetson tarball (64 MB), checksums verified
 .\build.ps1                            # packs, publishes 3 RIDs, builds the cpu, cpu-arm64 and cuda images
 .\artifacts\publish\win-x64\AnyGpuOnnx.Example.exe              # DirectML on any Windows GPU
 .\artifacts\publish\win-x64\AnyGpuOnnx.Example.exe --ep cpu
@@ -130,9 +132,11 @@ Build the Jetson image on the Jetson itself: copy `artifacts/publish/linux-arm64
 
 ## Live detection on video
 
-`LiveDetection.Example` runs YOLOv4 (default) or RF-DETR (`--model rf-detr-nano-dynamic.onnx`) on one or more video feeds
-the way a video analytics service does. The model is recognised by its input layout: NHWC is letterboxed for YOLOv4, NCHW is
-stretched and ImageNet-normalised for RF-DETR.
+`LiveDetection.Example` runs YOLOv4 (default), RF-DETR (`--model rf-detr-nano-dynamic.onnx`) or Ultralytics YOLO11 / YOLO26
+(`--model deps\model\yolo26n.onnx`) on one or more video feeds the way a video analytics service does. The model is recognised
+by its input layout and outputs: NHWC is YOLOv4 (letterboxed, grey 128); NCHW with one output is Ultralytics (letterboxed, grey
+114; `[N,84,A]` decoded with NMS, YOLO26's end2end `[N,300,6]` without); NCHW with two outputs is RF-DETR (stretched,
+ImageNet-normalised).
 
 ```
 ffmpeg per feed  ->  frame queue        ->  batch + preprocess + Run  ->  post-processing + sink
@@ -163,7 +167,7 @@ decode, resize       keeps the newest       own thread, just in time      decode
   see) and starts a thread per core in every feed's process, competing with the CPU provider.
 - **CPU provider without spin-waiting** (in `OnnxSessionFactory`, so for every CPU session): idle ORT threads sleep instead of
   burning the cores the decoders and the sink need. 1.7-1.9x faster per frame on the Core Ultra 7 265U below.
-- Per frame it prints capture-to-result latency and the detections; every 5 s a `STATS` line, at the end a `RESULT` line
+- Per frame it prints capture-to-result latency and the detections (label, score, box in source pixels); every 5 s a `STATS` line, at the end a `RESULT` line
   (fps, mean batch, preprocessing, inference and post-processing per batch, latency p50/p95, frames dropped). Ctrl+C stops
   the feeds and drains the pipeline.
 
@@ -187,6 +191,39 @@ share one power budget), so read the DirectML rows as rough:
 | DirectML | RF-DETR nano | 2, 2 | 9.8 | 3.0 / 200 / 0.7 ms | 248 / 323 ms | 763 of 1294 |
 | CPU | YOLOv4 | 1, 1 | 1.6 | 1.4 / 608 / 3.2 ms | 654 / 770 ms | 558 of 647 |
 | CPU | RF-DETR nano | 1, 1 | 2.9 | 1.2 / 347 / 0.7 ms | 381 / 553 ms | 492 of 647 |
+| DirectML | YOLO11n | 1, 1 | 12.0 | 1.4 / 13 / 1.0 ms | 15 / 23 ms | 4 of 647 |
+| DirectML | YOLO26n | 1, 1 | 12.0 | 1.2 / 13 / 0.1 ms | 14 / 17 ms | 4 of 647 |
+| DirectML | YOLO11s | 1, 1 | 11.6 | 3.1 / 51 / 1.7 ms | 48 / 157 ms | 24 of 647 |
+| DirectML | YOLO26s | 1, 1 | 11.1 | 4.4 / 76 / 0.2 ms | 88 / 175 ms | 54 of 647 |
+| DirectML | VisDrone YOLO26n 640 | 1, 1 | 12.0 | 1.1 / 11 / 0.3 ms | 12 / 14 ms | 4 of 647 |
+| DirectML | VisDrone YOLO26n 1344x768 | 1, 1 | 12.0 | 5.0 / 33 / 0.8 ms | 38 / 54 ms | 5 of 647 |
+| CPU | YOLO11n | 1, 1 | 9.0 | 1.7 / 107 / 1.5 ms | 150 / 205 ms | 162 of 647 |
+| CPU | YOLO26n | 1, 1 | 8.8 | 2.2 / 111 / 0.2 ms | 155 / 211 ms | 176 of 647 |
+| CPU | VisDrone YOLO26n 640 | 1, 1 | 9.5 | 1.9 / 104 / 0.5 ms | 146 / 194 ms | 140 of 647 |
+
+The Ultralytics nano models are the only ones here that keep up with the video on this iGPU, at 15 ms from frame to
+detections, and they run three to four times as many frames as RF-DETR nano on the CPU. YOLO26's end2end output needs no
+NMS, so its post-processing is 0.1-0.2 ms against YOLO11's 1-1.7 ms. Bare `Run` time per frame at batch 1, three interleaved
+rounds on DirectML and one on CPU, same machine:
+
+| Model | Input | DirectML | CPU |
+|---|---|---|---|
+| YOLO11n | 640 | 18-25 ms | 80 ms |
+| YOLO26n (end2end) | 640 | 18-24 ms | 125 ms |
+| YOLO11s | 640 | 46-70 ms | 324 ms |
+| YOLO26s (end2end) | 640 | 47-69 ms | 296 ms |
+| RF-DETR nano | 384 | 73-100 ms | 450 ms |
+| YOLOv4 | 416 | 104-264 ms | 701 ms |
+
+The YOLO11, YOLO26 and VisDrone models (`get-deps.ps1`) are ONNX exports by [EdgeFirst](https://huggingface.co/EdgeFirst):
+YOLO11/YOLO26 are the official Ultralytics COCO weights unchanged, the VisDrone ones EdgeFirst's training on VisDrone2019
+(drone views, 10 classes: pedestrian, people, bicycle, car, van, truck, tricycle, awning-tricycle, bus, motor). All are
+**AGPL-3.0** (Ultralytics; an Ultralytics Enterprise License is the alternative), and VisDrone's dataset has its own terms.
+They are downloaded for benchmarking only: no example bundles them and no container image ships them; pass them with
+`--model deps\model\yolo26n.onnx`. The live example reads their class names from the model metadata and accepts
+non-square inputs such as the 16:9 1344x768 VisDrone variant, which suits video better than a letterboxed square.
+On this street video, filmed from above but not by a drone, the VisDrone models find pedestrians, cars and cyclists; on
+`dog.jpg`, a ground-level photo, they are weak, as expected outside their training views.
 
 Against the previous pipeline, alternated with it on the same 30 s clip: the pipeline's own overhead per batch with the device
 saturated fell from 16-21 ms to 6-9 ms, and YOLOv4 on DirectML ran 36% more frames (`Run` itself 25% faster with less CPU

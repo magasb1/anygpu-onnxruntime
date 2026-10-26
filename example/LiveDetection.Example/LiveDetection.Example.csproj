@@ -3,7 +3,7 @@
   <!-- YOLOv4 or RF-DETR on live video feeds, batched. Package references and publish settings are in ../Directory.Build.props.
        Decoding and letterboxing are done by ffmpeg, which must be on PATH; no image library needed. -->
   <ItemGroup>
-    <Compile Include="..\Coco.cs;..\Yolov4Decoder.cs;..\RfDetrDecoder.cs" />
+    <Compile Include="..\Coco.cs;..\Nms.cs;..\Yolov4Decoder.cs;..\RfDetrDecoder.cs;..\UltralyticsDecoder.cs" />
     <None Include="..\..\deps\model\yolov4.onnx;..\..\deps\model\rf-detr-nano-dynamic.onnx;..\..\deps\video\person-bicycle-car-detection.mp4" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

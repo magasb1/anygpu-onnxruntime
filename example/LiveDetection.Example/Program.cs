@@ -1,5 +1,6 @@
-// Live object detection on one or more video feeds, batched, on the best available provider. YOLOv4 by default; an RF-DETR
-// export (NCHW input, e.g. rf-detr-nano-dynamic.onnx) is recognised by its input layout and preprocessed and decoded as such.
+// Live object detection on one or more video feeds, batched, on the best available provider. YOLOv4 by default; with --model,
+// RF-DETR (e.g. rf-detr-nano-dynamic.onnx) and Ultralytics YOLO (YOLO11, YOLO26 end2end) too, told apart by input layout and
+// outputs and preprocessed and decoded as each expects.
 //
 //   ffmpeg per feed  -->  frame queue  -->  batch + preprocess + inference  -->  post-processing + sink
 //   decode, resize       keeps the newest   own thread, just in time           decode, NMS, print, stats
@@ -46,12 +47,14 @@ for (int i = 0; i < args.Length; i++)
     }
 }
 if (sources.Count == 0) sources.Add(Path.Combine(AppContext.BaseDirectory, "person-bicycle-car-detection.mp4"));
-if (maxBatch == 0) maxBatch = sources.Count;
 
 InferenceSession session;
 string used, inputName;
 bool planar;
-int size;
+int inW, inH;
+Detector detector;
+string[] names = Coco.Names80;
+float boxScaleX = 1, boxScaleY = 1;
 try
 {
     // Read the input shape without optimising, to pin every free dimension before the real session is built: batch to --batch,
@@ -59,22 +62,41 @@ try
     // profiles; on DirectML they ran 1.5-3x faster per frame than the same model left dynamic. Partial batches are padded.
     int[] dims;
     string[] symbolic;
+    int outputCount;
+    Dictionary<string, string> metadata;
     using (SessionOptions plain = new() { GraphOptimizationLevel = GraphOptimizationLevel.ORT_DISABLE_ALL })
     using (InferenceSession probe = new(modelPath, plain))
     {
         (inputName, NodeMetadata meta) = probe.InputMetadata.First();
         (dims, symbolic) = (meta.Dimensions, meta.SymbolicDimensions);
+        outputCount = probe.OutputMetadata.Count;
+        metadata = probe.ModelMetadata.CustomMetadataMap;
     }
-    planar = dims[1] == 3; // [N, 3, H, W] RF-DETR, or [N, H, W, 3] YOLOv4
-    size = planar ? dims[2] : dims[1];
-    if (size <= 0) size = 384; // RF-DETR exports with free height and width (onnx-community); nano was trained at 384
+    // [N, H, W, 3] in: YOLOv4. [N, 3, H, W] in: Ultralytics YOLO with one output, RF-DETR with two (boxes, logits).
+    planar = dims[1] == 3;
+    detector = !planar ? Detector.Yolov4 : outputCount == 1 ? Detector.Ultralytics : Detector.RfDetr;
+    (inH, inW) = planar ? (dims[2], dims[3]) : (dims[1], dims[2]);
+    // Free height and width: Ultralytics models were trained at 640; RF-DETR's onnx-community exports leave them free, nano was trained at 384.
+    int fallback = detector == Detector.Ultralytics ? 640 : 384;
+    if (inH <= 0) inH = fallback;
+    if (inW <= 0) inW = fallback;
+    if (detector == Detector.Ultralytics)
+    {
+        // Ultralytics and EdgeFirst exports name their classes in the metadata (COCO's 80, VisDrone's 10, a custom set).
+        if (metadata.TryGetValue("labels", out string? labels) || metadata.TryGetValue("names", out labels))
+            names = ParseLabels(labels) ?? names;
+        // EdgeFirst's exports emit boxes normalised to 0..1, Ultralytics' own export in input pixels.
+        if (metadata.ContainsKey("edgefirst")) (boxScaleX, boxScaleY) = (inW, inH);
+    }
+    if (maxBatch == 0) maxBatch = dims[0] > 0 ? dims[0] : sources.Count; // a fixed batch, or one frame per feed
     if (dims[0] > 0 && dims[0] != maxBatch)
         throw new ArgumentException($"{Path.GetFileName(modelPath)} has a fixed batch of {dims[0]}; use --batch {dims[0]} or an export with a dynamic batch");
 
     (session, used) = OnnxSessionFactory.Create(modelPath, provider, trtCache, Console.WriteLine, o =>
     {
+        int[] pinned = planar ? [maxBatch, 3, inH, inW] : [maxBatch, inH, inW, 3];
         for (int d = 0; d < dims.Length; d++)
-            if (dims[d] < 0 && symbolic[d] != "") o.AddFreeDimensionOverrideByName(symbolic[d], d == 0 ? maxBatch : size);
+            if (dims[d] < 0 && symbolic[d] != "") o.AddFreeDimensionOverrideByName(symbolic[d], pinned[d]);
     });
 }
 catch (Exception e) // unknown provider, missing or unsuitable model, or nothing available
@@ -86,11 +108,13 @@ catch (Exception e) // unknown provider, missing or unsuitable model, or nothing
 using (session)
 using (RunOptions runOptions = new())
 {
-    // ffmpeg delivers RGB24; a per-channel table turns bytes into model values: 0..1 interleaved for YOLOv4, ImageNet-normalised
-    // planes for RF-DETR.
-    int frameBytes = size * size * 3;
-    long[] inputShape = planar ? [maxBatch, 3, size, size] : [maxBatch, size, size, 3];
-    float[][] lut = planar ? [Table(0.485f, 0.229f), Table(0.456f, 0.224f), Table(0.406f, 0.225f)] : [Table(0, 1), Table(0, 1), Table(0, 1)];
+    // ffmpeg delivers RGB24; a per-channel table turns bytes into model values: 0..1 for YOLOv4 (interleaved) and Ultralytics
+    // (planes), ImageNet-normalised planes for RF-DETR.
+    int frameBytes = inW * inH * 3;
+    long[] inputShape = planar ? [maxBatch, 3, inH, inW] : [maxBatch, inH, inW, 3];
+    float[][] lut = detector == Detector.RfDetr ? [Table(0.485f, 0.229f), Table(0.456f, 0.224f), Table(0.406f, 0.225f)] : [Table(0, 1), Table(0, 1), Table(0, 1)];
+    // Letterbox grey as each model was trained with (YOLOv4 128, Ultralytics 114); RF-DETR is stretched.
+    string? padColor = detector switch { Detector.Yolov4 => "0x808080", Detector.Ultralytics => "0x727272", _ => null };
     string[] inputNames = [inputName], outputNames = [.. session.OutputMetadata.Keys];
 
     // Warm-up before the first live frame (on the Jetson TensorRT builds or loads its engine here). With every input dimension
@@ -105,7 +129,7 @@ using (RunOptions runOptions = new())
     Feed[] feeds;
     try
     {
-        feeds = sources.Select((s, i) => Feed.Open(i, s, size, letterbox: !planar)).ToArray();
+        feeds = sources.Select((s, i) => Feed.Open(i, s, inW, inH, padColor)).ToArray();
     }
     catch (Exception e) when (e is Win32Exception or InvalidOperationException) // no ffmpeg on PATH, or a source it cannot open
     {
@@ -207,16 +231,19 @@ using (RunOptions runOptions = new())
         Parallel.For(0, slot.Count, i =>
         {
             Feed feed = slot.Frames[i].Feed;
-            decoded[i] = planar
-                ? RfDetrDecoder.Decode(slot.Outputs, i, feed.Width, feed.Height)
-                : Yolov4Decoder.Decode(slot.Outputs, i, feed.Scale, feed.PadX, feed.PadY, feed.Width, feed.Height);
+            decoded[i] = detector switch
+            {
+                Detector.RfDetr => RfDetrDecoder.Decode(slot.Outputs, i, feed.Width, feed.Height),
+                Detector.Ultralytics => UltralyticsDecoder.Decode(slot.Outputs, i, names, boxScaleX, boxScaleY, feed.Scale, feed.PadX, feed.PadY, feed.Width, feed.Height),
+                _ => Yolov4Decoder.Decode(slot.Outputs, i, feed.Scale, feed.PadX, feed.PadY, feed.Width, feed.Height),
+            };
         });
         for (int i = 0; i < slot.Count; i++)
         {
             Frame f = slot.Frames[i];
             double latency = Stopwatch.GetElapsedTime(f.CapturedAt).TotalMilliseconds;
             stdout.Write($"feed {f.Feed.Id} frame {f.Index,5} {latency,5:F0} ms  ");
-            stdout.WriteLine(string.Join(", ", decoded[i].OrderByDescending(d => d.Score).Select(d => $"{d.Label} {d.Score:F2}")));
+            stdout.WriteLine(string.Join(", ", decoded[i].OrderByDescending(d => d.Score).Select(d => $"{d.Label} {d.Score:F2} [{d.X1:F0},{d.Y1:F0},{d.X2:F0},{d.Y2:F0}]")));
             total.Latencies.Add(latency);
             window.Latencies.Add(latency);
         }
@@ -248,6 +275,15 @@ using (RunOptions runOptions = new())
     }
 }
 return 0;
+
+// Class names from model metadata: EdgeFirst's `labels` is a JSON array, Ultralytics' `names` a Python dict {0: 'person', ...}.
+static string[]? ParseLabels(string text)
+{
+    if (text.TrimStart().StartsWith('['))
+        return System.Text.Json.JsonSerializer.Deserialize<string[]>(text);
+    string[] found = System.Text.RegularExpressions.Regex.Matches(text, @"\d+\s*:\s*['""]([^'""]*)['""]").Select(m => m.Groups[1].Value).ToArray();
+    return found.Length > 0 ? found : null;
+}
 
 static float[] Table(float mean, float std) => Enumerable.Range(0, 256).Select(v => (v / 255f - mean) / std).ToArray();
 
@@ -323,8 +359,10 @@ class Stats
     }
 }
 
-// One video source: ffprobe reads its size (needed to map boxes back), then ffmpeg decodes it to size x size RGB24 on stdout:
-// letterboxed with grey padding and the same rounding as Yolov4.Example, or stretched as RfDetr.Example does.
+enum Detector { Yolov4, RfDetr, Ultralytics }
+
+// One video source: ffprobe reads its size (needed to map boxes back), then ffmpeg decodes it to the model's input size, RGB24 on stdout:
+// letterboxed with `padColor` and the same rounding as Yolov4.Example, or, without one, stretched as RfDetr.Example does.
 class Feed
 {
     public required int Id, Width, Height, PadX, PadY;
@@ -333,7 +371,7 @@ class Feed
     public required Process Process;
     public bool Stopped { get; private set; }
 
-    public static Feed Open(int id, string source, int size, bool letterbox)
+    public static Feed Open(int id, string source, int inW, int inH, string? padColor)
     {
         ProcessStartInfo probe = new("ffprobe", ["-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=p=0", source])
             { RedirectStandardOutput = true, RedirectStandardError = true };
@@ -344,11 +382,11 @@ class Feed
             throw new InvalidOperationException($"cannot open {source}: {error.Trim()}");
 
         int width = int.Parse(w), height = int.Parse(h);
-        float scale = Math.Min((float)size / width, (float)size / height);
-        int newW = (int)(scale * width), newH = (int)(scale * height), padX = (size - newW) / 2, padY = (size - newH) / 2;
-        string filter = letterbox
-            ? $"scale={newW}:{newH}:flags=bilinear,pad={size}:{size}:{padX}:{padY}:color=0x808080"
-            : $"scale={size}:{size}:flags=bilinear";
+        float scale = Math.Min((float)inW / width, (float)inH / height);
+        int newW = (int)(scale * width), newH = (int)(scale * height), padX = (inW - newW) / 2, padY = (inH - newH) / 2;
+        string filter = padColor is null
+            ? $"scale={inW}:{inH}:flags=bilinear"
+            : $"scale={newW}:{newH}:flags=bilinear,pad={inW}:{inH}:{padX}:{padY}:color={padColor}";
         // A file is paced at its frame rate like a camera (-re); a live source is paced by itself and read without input
         // buffering. Slice threading only: frame threading holds back one frame per decoder thread (latency) and starts a thread
         // per core in every feed's process, competing with the CPU provider. -nostdin keeps ffmpeg off the console.

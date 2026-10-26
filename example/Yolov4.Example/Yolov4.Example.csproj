@@ -8,7 +8,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Compile Include="..\Coco.cs;..\Yolov4Decoder.cs" />
+    <Compile Include="..\Coco.cs;..\Nms.cs;..\Yolov4Decoder.cs" />
     <None Include="..\..\deps\model\yolov4.onnx;..\..\deps\model\dog.jpg" Link="%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
