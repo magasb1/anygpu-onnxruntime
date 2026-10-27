@@ -6,6 +6,7 @@
 // Ultralytics' own exports, the input width and height for exports that emit boxes normalised to 0..1 (EdgeFirst's). Boxes are
 // then mapped from the letterboxed input back to the original image and clipped.
 using System.Buffers;
+using TensorPrimitives = System.Numerics.Tensors.TensorPrimitives;
 using Microsoft.ML.OnnxRuntime.Tensors;
 
 static class UltralyticsDecoder
@@ -34,32 +35,28 @@ static class UltralyticsDecoder
             return found;
         }
 
-        // Class-major: each class row is contiguous, so the best class per anchor is found by streaming 80 rows of A floats
-        // rather than striding through memory A floats at a time.
+        // Class-major: each class row is contiguous, so the best score per anchor is a vectorised running max over 80 rows of
+        // A floats; only the few anchors above the threshold then look up which class it was.
         int anchors = cols;
-        float[] best = ArrayPool<float>.Shared.Rent(anchors);
-        int[] bestClass = ArrayPool<int>.Shared.Rent(anchors);
+        float[] rented = ArrayPool<float>.Shared.Rent(anchors);
+        Span<float> best = rented.AsSpan(0, anchors);
         try
         {
             v.Slice(4 * anchors, anchors).CopyTo(best);
-            Array.Clear(bestClass, 0, anchors);
             for (int c = 1; c < rows - 4; c++)
-            {
-                ReadOnlySpan<float> row = v.Slice((4 + c) * anchors, anchors);
-                for (int a = 0; a < anchors; a++)
-                    if (row[a] > best[a]) { best[a] = row[a]; bestClass[a] = c; }
-            }
+                TensorPrimitives.Max(best, v.Slice((4 + c) * anchors, anchors), best);
             for (int a = 0; a < anchors; a++)
             {
-                if (best[a] < ScoreThreshold) continue;
+                if (!(best[a] >= ScoreThreshold)) continue; // also skips NaN, which the lookup below would never find
+                int cls = 0;
+                while (v[(4 + cls) * anchors + a] != best[a]) cls++;
                 float cx = v[a], cy = v[anchors + a], w = v[2 * anchors + a], h = v[3 * anchors + a];
-                found.Add(Box(bestClass[a], best[a], cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2));
+                found.Add(Box(cls, best[a], cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2));
             }
         }
         finally
         {
-            ArrayPool<float>.Shared.Return(best);
-            ArrayPool<int>.Shared.Return(bestClass);
+            ArrayPool<float>.Shared.Return(rented);
         }
         return Nms.PerClass(found, IouThreshold);
     }
